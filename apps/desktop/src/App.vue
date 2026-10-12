@@ -2,14 +2,17 @@
 import { computed,onMounted,onBeforeUnmount,ref } from 'vue';
 import { DockviewVue,themeDark,type DockviewReadyEvent,type DockviewApi } from 'dockview-vue';
 import 'dockview-vue/dist/styles/dockview.css';
-import {createState,type Resource} from './state';
+import {createState} from './state';
 import Graph from './Graph.vue';
 import Source from './Source.vue';
 import Settings from './Settings.vue';
+import Explorer from './Explorer.vue';
 import './style.css';
 const s=createState();const {projectId,snapshotId,stage,running,stale,error,version,ready,resources,resourceTotal,resourceCursor,search,selected,skipped,root,graphResources,relations,relationTotal,graphCursor,direction,kind,resolution,depth,overview,overviewCursor,grouping,details,source,sourcePosition,editorPosition,diagnostics,diagnosticTotal,diagnosticCursor,report,settings,plan,part,preview,previewOffset,success,canExport}=s;
-let docking:DockviewApi|undefined;const modal=ref<'settings'|'help'|null>(null);const licenses=ref('');
-const folders=computed(()=>{const grouped=new Map<string,Resource[]>();for(const r of resources.value){const parent=r.path.includes('/')?r.path.slice(0,r.path.lastIndexOf('/')):'(ルート)';if(!grouped.has(parent))grouped.set(parent,[]);grouped.get(parent)!.push(r);}return [...grouped.entries()];});
+let docking:DockviewApi|undefined;const modal=ref<'settings'|'help'|null>(null);const licenses=ref(''),explorerReveal=ref(0);
+const rootName=computed(()=>settings.value?.settings.project?.split(/[\\/]/).filter(Boolean).slice(-1)[0]??'プロジェクト');
+const pathFor=(id:string)=>graphResources.value.find(r=>r.id===id)?.path??id;
+const relationTitle=(r:typeof relations.value[number])=>`${pathFor(r.from)} → ${r.targets.length?r.targets.map(pathFor).join('、'):r.reference} · ${r.kind} · ${r.status}`;
 function panel(name:string){docking?.getPanel(name)?.api.setActive();}
 function onReady(event:DockviewReadyEvent){docking=event.api;
   event.api.addPanel({id:'explorer',component:'explorer',title:'Explorer',initialWidth:280});
@@ -18,8 +21,11 @@ function onReady(event:DockviewReadyEvent){docking=event.api;
   event.api.addPanel({id:'source',component:'source',title:'Source / 根拠',position:{referencePanel:'graph',direction:'right'},initialWidth:450});
   event.api.addPanel({id:'export',component:'export',title:'AI Export',position:{referencePanel:'graph',direction:'below'},initialHeight:250});
   event.api.addPanel({id:'diagnostics',component:'diagnostics',title:'Diagnostics',position:{referencePanel:'export',direction:'within'}});
+  event.api.getPanel('explorer')?.api.setSize({width:280});
+  event.api.getPanel('source')?.api.setSize({width:Math.min(400,event.api.width*.28)});
   panel('graph');panel('export');}
 async function resource(id:string){await s.focusId(id);}
+async function showGroup(name:string){await s.group(name);explorerReveal.value++;panel('explorer');}
 async function showRelation(id:string){await s.relation(id);panel('source');}
 async function help(){modal.value='help';licenses.value=await (await fetch('/licenses.txt')).text();}
 async function saveReport(){const result=await s.request<{cancelled?:boolean;code?:string}>('diagnostic_report_save',{},s.context());if(result.code)throw Error(result.code);if(!result.cancelled)success.value='エラーレポートを保存しました';}
@@ -43,19 +49,20 @@ onBeforeUnmount(()=>s.dispose());
       <template #panel-explorer><section class="pane explorer" aria-label="ファイル一覧">
         <label class="search-field"><span>検索</span><input v-model="search" placeholder="名前・相対パス" @input="s.guard(()=>s.loadResources())"></label>
         <div class="muted counts">{{resources.length}} / {{resourceTotal}} ファイル · 出力対象 {{selected.length}}</div>
-        <div class="tree"><details v-for="[folder,files] of folders" :key="folder" open><summary>{{folder}}</summary><div v-for="r in files" :key="r.id" class="file-row" :class="{active:root?.id===r.id}" :data-path="r.path"><input type="checkbox" :aria-label="`出力対象 ${r.path}`" :checked="selected.includes(r.path)" :disabled="running" @change="s.guard(()=>s.select(r,($event.target as HTMLInputElement).checked))"><button class="file-name" :title="r.path" @click="s.guard(()=>s.focus(r))">{{r.path.split('/').slice(-1)[0]}}</button><span v-if="r.parse!=='ok'||r.decode!=='ok'" class="badge warning">未解析</span></div></details></div>
-        <button v-if="resourceCursor" @click="s.guard(()=>s.loadResources(true))">さらに表示</button>
-        <details class="exclusions"><summary>適用中の除外・読めない資源</summary><p>{{settings?.settings.analysis.exclusions.join('、')}}</p><ul><li v-for="(skip,index) in skipped" :key="index">{{skip.path}} · {{skip.reason}}</li></ul></details>
+        <Explorer :resources="resources" :selected="selected" :active="root?.id" :running="running" :search="search" :project-id="projectId" :root-name="rootName" :reveal="explorerReveal" @focus="r=>s.guard(()=>s.focus(r))" @select="(r,checked)=>s.guard(()=>s.select(r,checked))"/>
+        <button v-if="resourceCursor" class="load-more" :disabled="s.resourceLoading.value" @click="s.guard(()=>s.loadResources(true))">さらに表示</button>
+        <p v-if="resourceCursor" class="muted counts">未取得のファイルがあります。続きを取得して確認できます。</p>
+        <details class="exclusions"><summary>適用中の除外・読めない資源</summary><div class="exclusion-content"><p>{{settings?.settings.analysis.exclusions.join('、')}}</p><ul><li v-for="(skip,index) in skipped" :key="index">{{skip.path}} · {{skip.reason}}</li></ul></div></details>
         <p v-if="!projectId" class="empty">フォルダを開いて解析すると、ファイルと参照関係を調べられます。</p>
       </section></template>
       <template #panel-graph><section class="pane graph-pane" aria-label="関連グラフ">
-        <div class="pane-toolbar wrap"><strong>{{root?.path??'起点を選択'}}</strong><button v-if="root" :disabled="running" @click="s.guard(()=>s.select(root!,true))">出力対象に追加</button></div>
+        <div class="pane-toolbar wrap"><strong :title="root?.path">{{root?.path??'起点を選択'}}</strong><button v-if="root" :disabled="running" @click="s.guard(()=>s.select(root!,true))">出力対象に追加</button></div>
         <div class="pane-toolbar wrap"><label>方向<select aria-label="方向" v-model="direction" @change="s.guard(()=>s.loadGraph())"><option value="both">参照元・参照先</option><option value="in">参照元</option><option value="out">参照先</option></select></label><label>種類<select aria-label="種類" v-model="kind" @change="s.guard(()=>s.loadGraph())"><option value="">すべて</option><option v-for="k in ['import','extends','implements','type','include','script','navigation','module','configuration']" :key="k">{{k}}</option></select></label><label>解決<select aria-label="解決" v-model="resolution" @change="s.guard(()=>s.loadGraph())"><option value="">すべて</option><option value="confirmed">確定</option><option value="candidate">候補</option><option value="unresolved">未解決</option></select></label><label>深度<input v-model.number="depth" class="small-number" type="number" min="1" max="8" @change="s.guard(()=>s.loadGraph())"></label></div>
         <Graph :resources="graphResources" :relations="relations" :root="root" @relation="id=>s.guard(()=>showRelation(id))" @resource="id=>s.guard(()=>resource(id))"/>
-        <div class="graph-relations"><button v-for="r in relations" :key="r.id" class="relation-row" @click="s.guard(()=>showRelation(r.id))"><span class="badge" :class="r.status">{{r.status==='confirmed'?'確定':r.status==='candidate'?'候補':'未解決'}}</span> {{r.kind}} · {{r.reference}}</button></div>
+        <div class="graph-relations" aria-label="関係一覧"><button v-for="r in relations" :key="r.id" class="relation-row" :title="relationTitle(r)" @click="s.guard(()=>showRelation(r.id))"><span class="badge" :class="r.status">{{r.status==='confirmed'?'確定':r.status==='candidate'?'候補':'未解決'}}</span> {{r.kind}} · {{pathFor(r.from).split('/').slice(-1)[0]}} → {{r.targets.length?r.targets.map(id=>pathFor(id).split('/').slice(-1)[0]).join('、'):r.reference}}</button></div>
         <div class="pane-toolbar muted">{{relations.length}} / {{relationTotal}} 関係 <span v-if="graphCursor">· 表示を省略しています</span><button v-if="graphCursor" @click="s.guard(()=>s.loadGraph(true))">さらに表示</button></div>
       </section></template>
-      <template #panel-overview><section class="pane graph-pane" aria-label="概要グラフ"><div class="pane-toolbar"><label>集約<select aria-label="集約" v-model="grouping" @change="s.guard(()=>s.loadOverview())"><option value="folder">フォルダ</option><option value="package">Javaパッケージ</option></select></label><span class="muted">グループを選ぶと構成ファイルを表示します</span></div><Graph :resources="resources" :relations="[]" :groups="overview" @group="name=>s.guard(()=>s.group(name))"/><div class="group-list"><button v-for="g in overview" :key="g.id" @click="s.guard(()=>s.group(g.id))">{{g.id}} · {{g.members.length}} ファイル / 内部 {{g.internal.length}} 関係</button><button v-if="overviewCursor" @click="s.guard(()=>s.loadOverview(true))">さらに表示</button></div></section></template>
+      <template #panel-overview><section class="pane graph-pane" aria-label="概要グラフ"><div class="pane-toolbar"><label>集約<select aria-label="集約" v-model="grouping" @change="s.guard(()=>s.loadOverview())"><option value="folder">フォルダ</option><option value="package">Javaパッケージ</option></select></label><span class="muted">グループを選ぶと構成ファイルを表示します</span></div><Graph :resources="resources" :relations="[]" :groups="overview" @group="name=>s.guard(()=>showGroup(name))"/><div class="group-list"><button v-for="g in overview" :key="g.id" @click="s.guard(()=>showGroup(g.id))">{{g.id}} · {{g.members.length}} ファイル / 内部 {{g.internal.length}} 関係</button><button v-if="overviewCursor" @click="s.guard(()=>s.loadOverview(true))">さらに表示</button></div></section></template>
       <template #panel-source><section class="pane source-pane" aria-label="ソースと根拠">
         <div v-if="details" class="evidence-list"><strong>{{details.relation.kind}} · {{details.relation.status}}</strong><p>{{details.relation.reason}}</p><button v-for="e in details.evidence" :key="e.evidence.id" @click="s.guard(()=>s.evidence(e))">{{e.path}}:{{e.evidence.start.line}}:{{e.evidence.start.column}} · {{e.evidence.rule}}</button></div>
         <template v-if="source"><div class="source-info"><strong>{{source.resource.path}}</strong><span>{{source.resource.encoding}} · {{source.resource.encodingReason}} · {{source.resource.parse==='ok'?'解析済み':'一部未解析'}}</span><span v-if="sourcePosition">根拠 {{sourcePosition.line}}行 {{sourcePosition.column}}列</span><button @click="modal='settings'">文字コードを指定</button></div><Source :text="source.text" :language="source.resource.language" :position="editorPosition"/><div class="pane-toolbar muted">{{source.start}}–{{source.end}} / {{source.totalBytes}} UTF-8 bytes <button v-if="source.start" @click="s.guard(()=>s.sourcePage(0))">先頭</button><button v-if="source.end<source.totalBytes" @click="s.guard(()=>s.sourcePage(source!.end))">次の本文</button></div></template>

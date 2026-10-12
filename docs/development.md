@@ -81,6 +81,8 @@ pwsh -NoProfile -File test-support/setup.ps1
 
 Coreだけなら`cargo test --locked --offline -p legacists-core`を使用でき、Node・Tauri・画面ビルドは不要。外部利用の独立確認は`test-support/core-isolation.ps1`。試験定義は`crates/legacists-core/tests`と`test-support`を参照する。通常試験はスクリーンショット・動画・traceを保存しない。
 
+Explorer・グラフの可読性改善（#12・#11）は[設計書のT-23〜T-25](design.md#確認項目手順期待結果)で確認する。T-23・T-24の操作・幾何・状態の自動判定と、T-25で対象パネルだけ保存する画像の外観確認を区別する。T-25の画像・viewport・DPRは同じ実行の`ui-results.json`から参照し、画像確認の判断は実行原本へ別途残す。
+
 ビルドしたEXE／ZIPは実行原本の`artifacts`に保存し、実EXE試験へ同じEXEを渡す。`cargo xtask build`単独の実行は実EXE試験の成功を意味しない。生成ライセンスはEXEに内包し、生成元の補完資料は`test-support/licenses`で管理する。
 
 #6の条件と性能データの生成器・測定器、#10の残るローカル試験の共通運用方針は未完了。#3では性能以外の試験基盤と必要な開発時確認を管理する。実EXE結合試験は初期版の必須条件から除外し、既存の任意実行入口と失敗・未確認の記録を保持する。GitHub Actionsの共通運用は対象外。実装中の入口を全受入条件の確認済みと読み替えない。

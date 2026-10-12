@@ -11,6 +11,7 @@ interface SourcePage{text:string;resource:Resource;start:number;startPosition?:P
 export function createState(){
   const projectId=ref<string>(),snapshotId=ref<string>(),jobId=ref<string>(),stage=ref('フォルダを開いてください'),running=ref(false),stale=ref(false),error=ref(''),version=ref(''),ready=ref(false);
   const resources=shallowRef<Resource[]>([]),resourceTotal=ref(0),resourceCursor=ref<string|null>(null),search=ref(''),selected=shallowRef<string[]>([]),skipped=shallowRef<Summary['skipped']>([]);
+  const resourceLoading=ref(false);
   const root=shallowRef<Resource>(),graphResources=shallowRef<Resource[]>([]),relations=shallowRef<Relation[]>([]),relationTotal=ref(0),graphCursor=ref<string|null>(null),direction=ref('both'),kind=ref(''),resolution=ref(''),depth=ref(1);
   const overview=shallowRef<any[]>([]),overviewCursor=ref<string|null>(null),grouping=ref('folder'),details=shallowRef<any>(),source=shallowRef<SourcePage>(),sourcePosition=ref<Position>(),sourceEnd=ref<Position>();
   const diagnostics=shallowRef<any[]>([]),diagnosticTotal=ref(0),diagnosticCursor=ref<string|null>(null),report=ref(''),settings=shallowRef<SettingsInfo>();
@@ -25,10 +26,12 @@ export function createState(){
   function summary(value:Summary){selected.value=value.selection;stale.value=value.stale;skipped.value=value.skipped??[];}
   let resourceQuery:Record<string,unknown>={type:'resources',search:'',parent:null};
   async function loadResources(more=false){
-    if(!snapshotId.value)return;
+    if(!snapshotId.value||(more&&resourceLoading.value))return;
     const valid=ticket('resources');if(!more)resourceQuery={type:'resources',search:search.value,parent:null};
-    const result=await request<Page<Resource>>('query',{query:resourceQuery,cursor:more?resourceCursor.value:null,limit:100},context());
-    if(!valid())return;resources.value=more?[...resources.value,...result.items]:result.items;resourceTotal.value=result.total;resourceCursor.value=result.nextCursor;
+    resourceLoading.value=true;
+    try{const result=await request<Page<Resource>>('query',{query:resourceQuery,cursor:more?resourceCursor.value:null,limit:100},context());
+    if(!valid())return;resources.value=[...new Map([...(more?resources.value:[]),...result.items].map(r=>[r.id,r])).values()];resourceTotal.value=result.total;resourceCursor.value=result.nextCursor;
+    }finally{if(valid())resourceLoading.value=false;}
   }
   async function loadGraph(more=false){
     if(!root.value||!snapshotId.value)return;
@@ -58,7 +61,7 @@ export function createState(){
       while(running.value&&!disposed&&jobId.value===currentJob){await new Promise(r=>setTimeout(r,120));if(!running.value)break;await event(await request<Progress>('analysis_status',{jobId:currentJob},context()));}
     }finally{running.value=false;}
   }
-  function clear(){resources.value=[];graphResources.value=[];relations.value=[];overview.value=[];root.value=undefined;source.value=undefined;details.value=undefined;diagnostics.value=[];report.value='';invalidate();}
+  function clear(){resourceLoading.value=false;resourceTotal.value=0;resourceCursor.value=null;search.value='';resources.value=[];graphResources.value=[];relations.value=[];overview.value=[];root.value=undefined;source.value=undefined;details.value=undefined;diagnostics.value=[];report.value='';invalidate();}
   async function open(){const result=await request<Summary&{cancelled?:boolean}>('project_open');if(result.cancelled)return;projectId.value=result.projectId;snapshotId.value=undefined;clear();summary(result);await start();}
   async function focus(resource:Resource){root.value=resource;const valid=ticket('source');const result=await request<Page<SourcePage>>('query',{query:{type:'source',id:resource.id,offset:0,length:1048576}},context());if(!valid()||root.value?.id!==resource.id)return;source.value=result.items[0];sourcePosition.value=undefined;sourceEnd.value=undefined;details.value=undefined;await loadGraph();}
   async function focusId(id:string){const known=[...resources.value,...graphResources.value].find(r=>r.id===id);if(known)return focus(known);const valid=ticket('resource');const result=await request<Page<Resource>>('query',{query:{type:'resource',id},limit:1},context());if(valid())await focus(result.items[0]);}
@@ -70,9 +73,9 @@ export function createState(){
   async function readPreview(offset=0){if(!plan.value)return;const valid=ticket('preview');const result=await request<typeof preview.value>('export_read',{planId:plan.value.planId,part:part.value,offset,length:65536},context());if(valid()){previewOffset.value=offset;preview.value=result;}}
   async function save(){if(!plan.value)return;const result=await request<{cancelled?:boolean;saved:number;code?:string}>('export_save',{planId:plan.value.planId},context());if(result.cancelled)return;if(result.code){success.value=result.saved?`TXTを${result.saved}件保存しました。残りの保存に失敗しました`:'';throw Error(result.code);}success.value=`TXTを${result.saved}件保存しました`;}
   async function updateSettings(value:Settings){const changed=JSON.stringify(value.analysis)!==JSON.stringify(settings.value!.settings.analysis);settings.value=await request('settings_update',{settings:value,revision:settings.value!.settings.revision});stale.value ||= !!snapshotId.value&&changed;invalidate();}
-  async function group(name:string){resourceQuery={type:'overview',grouping:grouping.value,group:name};resourceCursor.value=null;resources.value=[];await loadResources(true);}
+  async function group(name:string){search.value='';resourceLoading.value=false;resourceQuery={type:'overview',grouping:grouping.value,group:name};resourceCursor.value=null;resources.value=[];await loadResources(true);}
   async function init(){const startup=await request<{version:string;settings:SettingsInfo}>('startup_check');version.value=startup.version;settings.value=startup.settings;unlisten=await subscribe(p=>void event(p).catch(()=>{error.value='LEG-9001';}));ready.value=true;}
   const editorPosition=computed(()=>{if(!sourcePosition.value)return;const base=source.value?.startPosition??{line:1,column:1},p=sourcePosition.value;const end=sourceEnd.value;return {line:p.line-base.line+1,column:p.line===base.line?p.column-base.column+1:p.column,endLine:end?end.line-base.line+1:undefined,endColumn:end?(end.line===base.line?end.column-base.column+1:end.column):undefined};});
-  return {projectId,snapshotId,jobId,stage,running,stale,error,version,ready,resources,resourceTotal,resourceCursor,search,selected,skipped,root,graphResources,relations,relationTotal,graphCursor,direction,kind,resolution,depth,overview,overviewCursor,grouping,details,source,sourcePosition,editorPosition,diagnostics,diagnosticTotal,diagnosticCursor,report,settings,plan,part,preview,previewOffset,success,canExport:computed(()=>!!snapshotId.value&&!running.value&&!stale.value&&!settings.value?.pending),guard,open,start,loadResources,loadGraph,loadOverview,loadDiagnostics,focus,focusId,sourcePage,select,relation,evidence,prepare,readPreview,save,updateSettings,group,init,readSettings,request,context,invalidate,dispose(){disposed=true;unlisten?.();},async cancel(){await request('analysis_cancel',{jobId:jobId.value},context());},async close(){await request('project_close',{},context());projectId.value=undefined;snapshotId.value=undefined;clear();}};
+  return {projectId,snapshotId,jobId,stage,running,stale,error,version,ready,resources,resourceTotal,resourceCursor,resourceLoading,search,selected,skipped,root,graphResources,relations,relationTotal,graphCursor,direction,kind,resolution,depth,overview,overviewCursor,grouping,details,source,sourcePosition,editorPosition,diagnostics,diagnosticTotal,diagnosticCursor,report,settings,plan,part,preview,previewOffset,success,canExport:computed(()=>!!snapshotId.value&&!running.value&&!stale.value&&!settings.value?.pending),guard,open,start,loadResources,loadGraph,loadOverview,loadDiagnostics,focus,focusId,sourcePage,select,relation,evidence,prepare,readPreview,save,updateSettings,group,init,readSettings,request,context,invalidate,dispose(){disposed=true;unlisten?.();},async cancel(){await request('analysis_cancel',{jobId:jobId.value},context());},async close(){await request('project_close',{},context());projectId.value=undefined;snapshotId.value=undefined;clear();}};
 }
 export type AppState=ReturnType<typeof createState>;
