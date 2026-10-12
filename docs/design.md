@@ -66,6 +66,8 @@ flowchart LR
 
 主な確認元: [Tauri設定](https://v2.tauri.app/reference/config/)、[VueのTypeScript対応](https://vuejs.org/guide/typescript/overview)、[Dockviewのライセンス区分](https://github.com/dockview/dockview/blob/master/LICENCE.md)、[Monaco](https://github.com/microsoft/monaco-editor)、[Cytoscape.js](https://js.cytoscape.org/)、[Tree-sitter Rust API](https://docs.rs/tree-sitter/)、[Java文法](https://github.com/tree-sitter/tree-sitter-java)、[JS文法](https://github.com/tree-sitter/tree-sitter-javascript)、[quick-xml](https://docs.rs/quick-xml/)、[encoding_rs](https://docs.rs/encoding_rs/)。版とライセンスの配布情報は各公式リポジトリが案内するnpm／crates.ioを参照した。
 
+E2Eのツールはユーザー指定によりPlaywright Testの採用を確定した。確認した配布情報は[@playwright/test 1.64.0](https://registry.npmjs.org/@playwright/test/1.64.0)（Apache-2.0、Node.js 20以上）。具体的な導入版と試験用ブラウザーは#3で固定する。[共通の採用方針](development.md#e2eの採用方針)に従い、以下のT-18を画面フロー、T-19を実EXE E2Eの入口とする。製品への依存追加・試験実行はまだ行っていない。
+
 正規表現だけのJava／JS解析は、コメント・文字列と型・参照を区別しにくいため主方式にしない。JVMや外部Language Serverを起動する方式は追加環境・非実行の条件に合わない。JSPは混在領域を分離し、XMLパーサーだけで全体を読む方式にしない。
 
 採用前に候補版のAPI・互換性・保守状況・公開アドバイザリを確認し、#2に判断を残す。現時点で脆弱性検査成功とはしない。#3では実際の推移依存をlockfileで固定し、Rust／Nodeの依存検査とライセンス本文・NOTICE等の収集を行う。MIT・BSDの著作権／許諾表示、Apache-2.0のライセンス・該当するNOTICEをアプリ内に収める。本体のライセンスは#8の担当であり、この表から決定しない。
@@ -336,7 +338,7 @@ WebView2Loaderも静的リンクする構成を選び、#3で実際のCargo feat
 | Coreと入出力の試験 | UTF-8・CP932の混在と手動指定、復号失敗、未解析ソースの出力、元ファイルの非変更、手動選択範囲を確認する。日本語と見出しを含めた800,000バイト境界、巨大ファイル・長い一行の分割と全文保持、出力前の変更検知を検証する | R-01、R-07、R-09、R-11、N-03 |
 | エラーレポートの試験 | 合成データで解析時の失敗を起こし、番号・発生箇所・原因区分・影響・具体的な確認手順・対処と追加調査の案内を確認。レポートには本文・設定値を添付せず、相対パス・クラス名・位置を保持して画面表示・TXT保存できることを確認する | R-08、N-04、N-07 |
 | フロントエンド試験 | 検索・手動選択・展開・根拠表示・再解析・出力プレビュー・エラーレポートを検証する。設定の保存・再読込、既定と現在の保存先、変更・削除を確認し、元ソース・出力済みTXTが削除されないことを確認する | R-01、R-03〜R-11 |
-| 実EXE結合試験 | ZIP内がEXE一つだけであることを確認し、展開後とEXE単独の移動後に通常権限・オフライン・追加インストールなしで起動する。同じEXEでTauri IPC、Core、内包資材と設定・保存・削除の操作結果を確認する | N-01、N-02と対象機能 |
+| 実EXE結合試験 | ZIP内がEXE一つだけであることを確認し、展開後とEXE単独の移動後に通常権限・オフライン・追加インストールなしで起動する。PlaywrightからWebView2へCDP接続し、同じEXEで実Tauri IPC、Core、内包資材と設定・保存・削除の操作結果を確認する | N-01、N-02と対象機能 |
 | 性能・環境試験 | #6で確定した基準・条件を基に#2で固定データと手順を具体化し、#4で時間・メモリ・応答を測定。Windows 11 x64・既存WebView2と測定端末の条件を記録 | N-01、N-05 |
 
 固定データは公開可能な合成ソースで作り、社内ソースをこの公開リポジトリへ入れない。自動試験・実EXE・OS固有の操作・性能測定の証拠を区別する。実行と報告のルールは[開発手順](development.md#検証の方針)に従う。
@@ -385,8 +387,8 @@ Webルートを`web`に設定して解析する。期待: Entry→Serviceのimpo
 | T-15 R-10、N-03 | 選択・指定・除外を保存して再起動。設定破損／新schema／移行途中失敗を起こす | 正常設定だけを復元し、壊れた設定を上書きしない。旧ルートへ復旧でき、本文／解析結果の永続ファイルなし |
 | T-16 R-10、N-03 | 移行・削除・二重起動・runtimeロック・所有ID不一致・reparse pointを試す | 成功／未完了を区別。解析元・保存TXT・親や無関係ファイルは前後一致。再起動後に初期化対象を復元しない |
 | T-17 R-07、N-03 | 保存先が原本／管理領域と重複、同名存在、途中書込失敗の状態で保存 | 原本を上書きしない。無断上書きなし。部分失敗を通知し、今回の一時ファイルのみ片付ける |
-| T-18 R-01〜R-11 | 実フロント資材をheadless Playwrightで操作し、IPC契約モックの要求・状態・DOMを照合 | 操作と表示の契約を確認。Tauri／OSダイアログ／実EXEの成功とは扱わない |
-| T-19 N-01・N-02・N-06 | ReleaseのPE依存とZIPを検査し、同じEXEを展開先／単独移動先で通常権限・オフライン起動。実IPCでCore解析・根拠・TXT・設定を操作 | ZIP内EXE一つ、隣接資材不要。worker・説明・ライセンスが内包。外部通信要求なし。Core単独試験もGUIなしで実行可能 |
+| T-18 R-01〜R-11 | Playwright Testとheadless Chromiumで実フロント資材を操作し、IPC契約モックの要求・状態・DOMを照合 | 画面フローの操作と表示の契約を確認。Tauri／OSダイアログ／実EXEの成功とは扱わない |
+| T-19 N-01・N-02・N-06と対象機能 | ReleaseのPE依存とZIPを検査し、同じEXEを展開先／単独移動先で通常権限・オフライン起動。PlaywrightをWebView2へCDP接続し、画面操作から実IPC・Core解析・根拠・TXT・設定を確認 | ZIP内EXE一つ、隣接資材不要。worker・説明・ライセンスが内包。外部通信要求なし。OS選択結果を代替する場合はその境界を記録し、OSダイアログの実操作は別に確認。Core単独試験もGUIなしで実行可能 |
 | T-20 N-05 | #6で確定する固定条件で初回／再解析、検索、展開、キャンセルを測る | 下記の測定方法と#6の合格値を照合。未確定／未測定は成功にしない |
 
 ### 性能測定の設計案
@@ -411,9 +413,9 @@ Webルートを`web`に設定して解析する。期待: Entry→Serviceのimpo
 | --- | --- |
 | `cargo xtask setup` | 固定toolchain・Node・package managerの確認と明示的な依存導入。通常試験では依存追加しない |
 | `cargo xtask check` / `test` | 読み取り専用の整形・型・構文確認／Core・入出力・診断・フロントの契約試験 |
-| `cargo xtask ui` | 実フロント資材のheadless Playwright。DOM・状態・要求で判定 |
+| `cargo xtask ui` | Playwright Testによる実フロント資材のheadless画面フロー。DOM・状態・要求で判定 |
 | `cargo xtask build` | Release EXE、内包資材・PE依存の検査、EXE一つのZIP生成 |
-| `cargo xtask exe` | buildした同じEXEの起動・実IPC・単独移動・OS境界の対象試験。保存用プロファイルはケースごとに分離 |
+| `cargo xtask exe` | buildした同じEXEへPlaywrightをCDP接続し、起動・画面から実IPC／Core／出力まで・単独移動を確認。管理データ・WebView2プロファイル・ポートをケースごとに分離。OS境界の確認結果を区別 |
 | `cargo xtask perf` | #6の確定条件で同じRelease EXEを測定 |
 | `cargo xtask ci` | check・test・ui・build・exe・perfを必須工程として記録。未確定・失敗・未実行・skippedを全体成功にしない |
 | 記録生成 | 実行ID・対象ソース・各工程・成果物を開発手順の形式で生成。保存した同じEXE／ZIPを#4・#5へ渡す |
