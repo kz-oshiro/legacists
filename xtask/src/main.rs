@@ -75,7 +75,12 @@ impl Run {
         let status = capture("git", &["status", "--porcelain=v1"], &root);
         let source_fingerprint = fingerprint(&root)?;
         let environment=capture("pwsh",&["-NoProfile","-Command","$o=Get-CimInstance Win32_OperatingSystem;$c=Get-CimInstance Win32_Processor|Select-Object -First 1;@{os=$o.Caption;build=$o.BuildNumber;architecture=$o.OSArchitecture;cpu=$c.Name;ramBytes=[uint64]$o.TotalVisibleMemorySize*1024;webView2=(Get-ChildItem 'C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application' -Directory|Where-Object Name -match '^\\d'|Select-Object -ExpandProperty Name);power=(powercfg /getactivescheme)}|ConvertTo-Json -Compress"],&root);
-        let report = json!({"schemaVersion":1,"runId":id,"mode":mode,"scope":if mode=="dev"{"issue-3-development"}else{"selected-or-full-validation"},"source":{"commit":commit,"dirty":!status.is_empty(),"status":status,"fingerprint":source_fingerprint},"startedAtUnixMs":timestamp(),"environment":{"host":serde_json::from_str::<Value>(&environment).unwrap_or(json!({"unavailable":true})),"rust":capture("rustc",&["--version"],&root),"node":capture(node.to_str().unwrap(),&["--version"],&root)},"stages":[],"artifacts":[],"success":false});
+        let acceptance_exceptions = if matches!(mode, "dev" | "ci") {
+            json!([{"name":"real-exe-integration","status":"not_required","testIds":["T-19 (real-EXE portion)","T-22"],"reason":"user-waived-initial-release-2026-10-12","issue":3}])
+        } else {
+            json!([])
+        };
+        let report = json!({"schemaVersion":1,"runId":id,"mode":mode,"scope":if mode=="dev"{"issue-3-development"}else{"selected-or-full-validation"},"source":{"commit":commit,"dirty":!status.is_empty(),"status":status,"fingerprint":source_fingerprint},"startedAtUnixMs":timestamp(),"environment":{"host":serde_json::from_str::<Value>(&environment).unwrap_or(json!({"unavailable":true})),"rust":capture("rustc",&["--version"],&root),"node":capture(node.to_str().unwrap(),&["--version"],&root)},"stages":[],"acceptanceExceptions":acceptance_exceptions,"artifacts":[],"success":false});
         Ok(Self {
             root,
             directory,
@@ -179,7 +184,16 @@ impl Run {
                 s["log"].as_str().unwrap_or("report.json")
             ));
         }
-        md.push_str(&format!("\nSuccess for this scope: `{}`\n\nEnvironment, commands, reasons, test-result references and artifact identities: [report.json](report.json).\n\nIssue #3 development success does not establish whole-product, performance, DPI or appearance acceptance.\n",self.report["success"]));
+        for exception in self.report["acceptanceExceptions"].as_array().unwrap() {
+            md.push_str(&format!(
+                "\nAcceptance exception: `{}` is `{}`; reason: `{}` (Issue #{}).\n",
+                exception["name"].as_str().unwrap(),
+                exception["status"].as_str().unwrap(),
+                exception["reason"].as_str().unwrap(),
+                exception["issue"]
+            ));
+        }
+        md.push_str(&format!("\nSuccess for this scope: `{}`\n\nEnvironment, commands, reasons, test-result references and artifact identities: [report.json](report.json).\n\nIssue #3 development success does not establish whole-product, real-EXE, performance, DPI or appearance acceptance.\n",self.report["success"]));
         fs::write(self.directory.join("report.md"), md)
     }
     fn stage(&mut self, stage: &str) -> bool {
@@ -294,13 +308,13 @@ impl Run {
 fn main() {
     let mode = env::args().nth(1).unwrap_or_else(|| "help".into());
     if mode == "help" {
-        println!("cargo xtask setup | check | test | ui | build | exe | perf | dev | ci\nDevelopment acceptance: dev; whole verification: ci. No dependencies are installed by test commands.");
+        println!("cargo xtask setup | check | test | ui | build | exe | perf | dev | ci\nDevelopment acceptance: dev; whole verification: ci. Real-EXE integration is optional for the initial release; run exe explicitly. No dependencies are installed by test commands.");
         return;
     }
     let mut run = Run::new(&mode).unwrap();
     let stages: Vec<&str> = match mode.as_str() {
-        "dev" => vec!["check", "test", "ui", "build", "exe-min"],
-        "ci" => vec!["check", "test", "ui", "build", "exe", "perf"],
+        "dev" => vec!["check", "test", "ui", "build"],
+        "ci" => vec!["check", "test", "ui", "build", "perf"],
         "exe" | "exe-min" | "perf" => {
             if let Some(path) = env::args().nth(2) {
                 env::set_var("LEGACISTS_EXISTING_EXE", path);

@@ -2,7 +2,7 @@
 
 Java・JSP・XHTML・JavaScriptなどのコード間の関連を可視化し、選択したソースをテキストにまとめて開発環境のAIへ渡す、Windows 11向けデスクトップアプリを開発するプロジェクトです。
 
-初期版を[Issue #3](https://github.com/kz-oshiro/legacists/issues/3)で実装中です。Rust解析CoreとVue/Tauriの開発版、試験・ビルドの入口があります。必須確認は未完了で、配布版はまだ公開していません。
+初期版の実装と開発時確認は[Issue #3](https://github.com/kz-oshiro/legacists/issues/3)で管理しています。Rust解析CoreとVue/Tauriの開発版、試験・ビルドの入口があります。全体検証・性能確認は後続工程で扱い、配布版はまだ公開していません。実EXEの操作を通す結合試験は確認が完了していません。
 
 ## 開発版の機能
 
