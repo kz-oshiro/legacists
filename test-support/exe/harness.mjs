@@ -1,7 +1,7 @@
 import {chromium} from '../../apps/desktop/node_modules/@playwright/test/index.mjs';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdir,readFile,cp,copyFile,writeFile} from 'node:fs/promises';
-import {resolve,join} from 'node:path';
+import {resolve,join,basename} from 'node:path';
 import {createServer} from 'node:net';
 import {createHash} from 'node:crypto';
 const root=resolve(import.meta.dirname,'../..');
@@ -11,8 +11,9 @@ function descendants(all,parent){const owned=[parent];for(let i=0;i<owned.length
 export async function start(testInfo,{existing,fixture}={}){
   const directory=testInfo.outputPath('case');await mkdir(directory,{recursive:true});
   const input=join(directory,'input');if(!existing)await cp(fixture??join(root,'crates/legacists-core/tests/fixtures/mixed'),input,{recursive:true});
-  const original=process.env.LEGACISTS_EXISTING_EXE??process.env.LEGACISTS_EXE??join(root,'target/release/legacists-desktop.exe');
-  const executable=existing?.executable??join(directory,'standalone/legacists-desktop.exe');if(!existing){await mkdir(resolve(executable,'..'),{recursive:true});await copyFile(original,executable);}
+  const version=(await readFile(join(root,'apps/desktop/src-tauri/Cargo.toml'),'utf8')).match(/^version = "([^"]+)"/m)[1];
+  const original=process.env.LEGACISTS_EXISTING_EXE??process.env.LEGACISTS_EXE??join(process.env.CARGO_TARGET_DIR??join(root,'target'),`release/legacists-desktop-v${version}.exe`);
+  const executable=existing?.executable??join(directory,'standalone',basename(original));if(!existing){await mkdir(resolve(executable,'..'),{recursive:true});await copyFile(original,executable);}
   const local=existing?.local??join(directory,'local');await mkdir(local,{recursive:true});
   const port=await new Promise(r=>{const server=createServer();server.listen(0,'127.0.0.1',()=>{const {port}=server.address();server.close(()=>r(port));});});
   const child=spawn(executable,[],{env:{...process.env,LOCALAPPDATA:local,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`},windowsHide:true,stdio:'ignore'});

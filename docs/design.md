@@ -378,6 +378,8 @@ WebView2は端末の既存Runtimeを利用する。[Microsoftの配布資料](ht
 
 `x86_64-pc-windows-msvc`のReleaseビルドを採用する。Tauriの`build.frontendDist`でVue・Monaco worker・グラフ・操作説明・依存表記の静的資材を内包し、`build.windows.staticVCRuntime: true`を明示する。`bundle.active: false`でインストーラーを作らず、EXEから配布ZIPを作る。Tree-sitter文法はRust側に静的リンクし、JVM・Node・外部文法DLLを利用者端末で要求しない。
 
+製品版の正本はアプリの`Cargo.toml`とし、Tauri設定に`version`を重複記載しない。[Tauriの版の取得規則](https://v2.tauri.app/reference/config/#version)によりWindowsのファイル／製品バージョンへ反映し、ウィンドウタイトルも同じ`CARGO_PKG_VERSION`から生成する。`xtask`はCargo metadataからアプリ版と実際のtarget directoryを取得し、ビルド後のEXEを`legacists-desktop-v<version>.exe`としてその`release`と実行原本の`artifacts`へ保存する。ZIP名は`legacists-v<version>-windows-x64.zip`とし、同名の版付きEXE一つだけを入れる。PE版情報・ZIP内EXE・ローカル用コピーの内容を照合し、不一致やコピー失敗はビルド失敗にする。生成記録には版と実際の保存先を残す。
+
 WebView2Loaderは[MSVC向けの既定静的リンク](https://github.com/wravery/webview2-rs/blob/main/README.md)を使い、#3で実際のCargo featureとPE依存を検査する。設定だけを単一EXE成功の証拠にはしない。Runtime不在・利用不可ならGUI作成前のネイティブメッセージで起動条件を示して終了し、ダウンロードやインストールへ進まない。インストーラー用の`minimumWebview2Version`にアプリの起動検査を代行させない。
 
 既存Runtimeの必要条件は環境作成・Tauri IPC・内包資材の読み込みに成功し、VueのProxy／Promise、DOMのResizeObserver、Monacoのmodule workerとBlob URL、グラフのCanvasが利用できることとする。起動時に必要機能を検査し、不足は条件の案内として表示する。Viteの出力targetは`es2020`を指定し、workerとCSSも既存Runtime上で#3・#4が確認する。この機能条件をすべてのWebView2版の動作保証とは扱わず、試験したRuntime版と機能検査結果を記録して利用条件に示す。実端末との不適合があれば資材・実装を見直し、追加導入が不可という要件を勝手に変更しない。
@@ -480,6 +482,7 @@ UI Automationヘルパーは`test-support`の開発用PowerShellスクリプト�
 | T-23 R-01・R-04・R-07、N-02 | `test-support/ui/readability-fixture.mjs`のルート直下・多段階層・同名・長い名前・日本語・各種類と100件のページ境界を使い、開閉・検索・追加取得・選択・狭い幅・除外欄を操作 | 祖先とファイル名を表示し、検索解除で開閉状態を戻す。追加取得は重複・欠落なし。閲覧／開閉と出力選択を分離し、全パス・種類別／汎用SVGを外部取得なしで確認できる。IPC契約モックの画面試験であり実EXE成功ではない |
 | T-24 R-03〜R-07、N-04 | 同じ合成例の長い共通パス・同名・日本語を含む十数ノードと集中関係で、ノード境界・ラベル・初期倍率を照合し、倍率・根拠・起点・フィルター・パネルサイズ・概要を操作 | ノードとラベルが重ならず、同名の表示名を区別し、初期100%から操作できる。方向・種類・状態・全文パス・複数根拠とソース位置へ到達し、手動選択と概要の移動を維持する。自動試験は幾何・状態・操作の確認 |
 | T-25 R-01・R-03・R-05・R-06 | T-23・T-24と同じ実フロント資材・合成例で、Explorer・関連グラフと幅220pxのExplorerだけ画像を保存し、人が表示を確認する | 階層名・インデント・文字・アイコン・同名の識別・起点と接続先・操作欄を読める。通常の操作試験とは別の外観確認として対象画像・viewport・DPR・判断を記録する。実EXE／WebView2・Windows DPI全般の確認へ読み替えない |
+| T-29 N-01 | 標準と別指定のCargo targetでビルドし、版付きEXE・ZIPとPE版情報、ZIP内のEXE名／内容、生成記録と終了出力を照合する | アプリのCargo版とすべて一致し、実際のreleaseとartifactsの保存先が分かる。不一致は成功にしない。タイトルは同じCargo版から生成し、実起動で確認した場合は操作全体の結合試験と区別して記録する |
 
 各ケースは、固定入力とmanifestを用意→前状態と原本ハッシュを記録→操作／障害を発生→結果と期待値を比較→後状態と原本を照合、の順で実行する。該当しない障害を通さず成功とする試験や、結果の存在だけを見る試験にしない。
 
@@ -495,7 +498,7 @@ UI Automationヘルパーは`test-support`の開発用PowerShellスクリプト�
 | R-09 | T-07・T-08・T-18・T-19 |
 | R-10 | T-15・T-16・T-18・T-19・T-22 |
 | R-11 | T-12・T-13・T-18・T-19 |
-| N-01・N-02 | T-05・T-19。N-02はT-23の内包SVGと実EXEの通信要求・内包資材も確認 |
+| N-01・N-02 | T-05・T-19。N-01の版・保存先はT-29、N-02はT-23の内包SVGと実EXEの通信要求・内包資材も確認 |
 | N-03 | T-01・T-07・T-15〜T-17・T-19・T-22 |
 | N-04 | T-02〜T-05・T-11・T-14・T-24 |
 | N-05 | T-13・T-20 |

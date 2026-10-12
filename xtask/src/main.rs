@@ -53,6 +53,8 @@ struct Run {
     id: String,
     node: PathBuf,
     npm: PathBuf,
+    version: String,
+    target_directory: PathBuf,
     report: Value,
 }
 impl Run {
@@ -71,6 +73,28 @@ impl Run {
             PathBuf::from("node.exe")
         };
         let npm = node_root.join("node_modules/npm/bin/npm-cli.js");
+        let metadata: Value = serde_json::from_str(&capture(
+            "cargo",
+            &[
+                "metadata",
+                "--locked",
+                "--offline",
+                "--no-deps",
+                "--format-version",
+                "1",
+            ],
+            &root,
+        ))?;
+        let version = metadata["packages"]
+            .as_array()
+            .and_then(|packages| packages.iter().find(|p| p["name"] == "legacists-desktop"))
+            .and_then(|package| package["version"].as_str())
+            .ok_or_else(|| io::Error::other("desktop package version unavailable"))?
+            .to_string();
+        let target_directory = metadata["target_directory"]
+            .as_str()
+            .map(PathBuf::from)
+            .ok_or_else(|| io::Error::other("Cargo target directory unavailable"))?;
         let commit = capture("git", &["rev-parse", "HEAD"], &root);
         let status = capture("git", &["status", "--porcelain=v1"], &root);
         let source_fingerprint = fingerprint(&root)?;
@@ -80,13 +104,15 @@ impl Run {
         } else {
             json!([])
         };
-        let report = json!({"schemaVersion":1,"runId":id,"mode":mode,"scope":if mode=="dev"{"issue-3-development"}else{"selected-or-full-validation"},"source":{"commit":commit,"dirty":!status.is_empty(),"status":status,"fingerprint":source_fingerprint},"startedAtUnixMs":timestamp(),"environment":{"host":serde_json::from_str::<Value>(&environment).unwrap_or(json!({"unavailable":true})),"rust":capture("rustc",&["--version"],&root),"node":capture(node.to_str().unwrap(),&["--version"],&root)},"stages":[],"acceptanceExceptions":acceptance_exceptions,"artifacts":[],"success":false});
+        let report = json!({"schemaVersion":1,"runId":id,"mode":mode,"scope":if mode=="dev"{"issue-3-development"}else{"selected-or-full-validation"},"product":{"version":version},"source":{"commit":commit,"dirty":!status.is_empty(),"status":status,"fingerprint":source_fingerprint},"startedAtUnixMs":timestamp(),"environment":{"host":serde_json::from_str::<Value>(&environment).unwrap_or(json!({"unavailable":true})),"rust":capture("rustc",&["--version"],&root),"node":capture(node.to_str().unwrap(),&["--version"],&root),"cargoTargetDir":target_directory},"stages":[],"acceptanceExceptions":acceptance_exceptions,"artifacts":[],"success":false});
         Ok(Self {
             root,
             directory,
             id,
             node,
             npm,
+            version,
+            target_directory,
             report,
         })
     }
@@ -105,8 +131,10 @@ impl Run {
             .env("LEGACISTS_RUN_DIR", &self.directory)
             .env(
                 "LEGACISTS_EXE",
-                self.directory.join("artifacts/legacists-desktop.exe"),
-            );
+                self.directory.join("artifacts").join(self.exe_name()),
+            )
+            .env("LEGACISTS_VERSION", &self.version)
+            .env("LEGACISTS_CARGO_TARGET_DIR", &self.target_directory);
         if let Some(parent) = self.node.parent().filter(|p| !p.as_os_str().is_empty()) {
             let path = env::var_os("PATH").unwrap_or_default();
             let mut paths = vec![parent.to_path_buf()];
@@ -168,6 +196,12 @@ impl Run {
             None,
         )
     }
+    fn exe_name(&self) -> String {
+        format!("legacists-desktop-v{}.exe", self.version)
+    }
+    fn zip_name(&self) -> String {
+        format!("legacists-v{}-windows-x64.zip", self.version)
+    }
     fn save(&self) -> io::Result<()> {
         fs::write(
             self.directory.join("report.json"),
@@ -192,6 +226,19 @@ impl Run {
                 exception["reason"].as_str().unwrap(),
                 exception["issue"]
             ));
+        }
+        md.push_str(&format!(
+            "\nProduct version: `{}`\nCargo target directory: `{}`\n",
+            self.version,
+            self.target_directory.display()
+        ));
+        if let Some(exe) = self.report["product"]["localExe"].as_str() {
+            md.push_str(&format!("Local EXE: `{exe}`\n"));
+        }
+        for artifact in self.report["artifacts"].as_array().unwrap() {
+            let path = artifact["path"].as_str().unwrap();
+            let name = Path::new(path).file_name().unwrap().to_string_lossy();
+            md.push_str(&format!("\nSaved artifact: [{name}](artifacts/{name})\n"));
         }
         md.push_str(&format!("\nSuccess for this scope: `{}`\n\nEnvironment, commands, reasons, test-result references and artifact identities: [report.json](report.json).\n\nIssue #3 development success does not establish whole-product, real-EXE, performance, DPI or appearance acceptance.\n",self.report["success"]));
         fs::write(self.directory.join("report.md"), md)
@@ -253,20 +300,25 @@ impl Run {
                 }
                 let artifacts = self.directory.join("artifacts");
                 fs::create_dir_all(&artifacts).unwrap();
-                let exe = artifacts.join("legacists-desktop.exe");
-                let target_directory = env::var_os("CARGO_TARGET_DIR")
-                    .map(PathBuf::from)
-                    .map(|path| self.root.join(path))
-                    .unwrap_or_else(|| self.root.join("target"));
-                self.report["environment"]["cargoTargetDir"] = json!(target_directory);
-                fs::copy(target_directory.join("release/legacists-desktop.exe"), &exe).unwrap();
                 if !self.powershell("package", "test-support/package.ps1") {
                     return false;
                 }
-                for path in [exe, artifacts.join("legacists-windows-x64.zip")] {
+                let local_exe = self.target_directory.join("release").join(self.exe_name());
+                self.report["product"]["localExe"] = json!(local_exe);
+                for path in [
+                    artifacts.join(self.exe_name()),
+                    artifacts.join(self.zip_name()),
+                ] {
                     let bytes = fs::read(&path).unwrap();
-                    self.report["artifacts"].as_array_mut().unwrap().push(json!({"path":path,"bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}));
+                    self.report["artifacts"].as_array_mut().unwrap().push(json!({"path":path,"version":self.version,"bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}));
                 }
+                println!(
+                    "Version: {}\nLocal EXE: {}\nSaved EXE: {}\nSaved ZIP: {}",
+                    self.version,
+                    local_exe.display(),
+                    artifacts.join(self.exe_name()).display(),
+                    artifacts.join(self.zip_name()).display()
+                );
                 true
             }
             "exe" | "exe-min" => {
