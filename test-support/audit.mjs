@@ -1,0 +1,10 @@
+import {execFileSync} from 'node:child_process';
+import {writeFile,mkdir} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+const root=resolve(import.meta.dirname,'..');const run=process.env.LEGACISTS_RUN_DIR??join(root,'outputs/audit');await mkdir(run,{recursive:true});
+const metadata=JSON.parse(execFileSync('cargo',['metadata','--locked','--offline','--filter-platform','x86_64-pc-windows-msvc','--format-version','1'],{cwd:root,encoding:'utf8',maxBuffer:32*1024*1024}));
+const applicable=new Set(metadata.resolve.nodes.map(n=>n.id));
+const packages=metadata.packages.filter(p=>p.source?.startsWith('registry+'));const queries=packages.map(p=>({package:{name:p.name,ecosystem:'crates.io'},version:p.version}));
+const response=await fetch('https://api.osv.dev/v1/querybatch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({queries})});if(!response.ok)throw Error('OSV unavailable');const result=await response.json();await writeFile(join(run,'rust-audit.json'),JSON.stringify({packages:packages.map(p=>({name:p.name,version:p.version})),...result},null,2));
+const relevant=result.results.flatMap((r,i)=>r.vulns?.length?[{package:packages[i].name,version:packages[i].version,applicable:applicable.has(packages[i].id),advisories:r.vulns}]:[]);await writeFile(join(run,'rust-audit-findings.json'),JSON.stringify(relevant,null,2));
+let failed=relevant.some(r=>r.applicable);let npm;try{npm=JSON.parse(execFileSync(process.execPath,[join(root,'outputs/tools/node-v24.21.0-win-x64/node_modules/npm/bin/npm-cli.js'),'--prefix','apps/desktop','audit','--json'],{cwd:root,encoding:'utf8'}));}catch(e){npm=JSON.parse(e.stdout);failed=true;}await writeFile(join(run,'npm-audit.json'),JSON.stringify(npm,null,2));console.log(`Rust OSV packages: ${packages.length}; applicable findings: ${relevant.filter(r=>r.applicable).length}; npm vulnerabilities: ${npm.metadata.vulnerabilities.total}`);if(failed)throw Error('Dependency advisory found; inspect saved audit results');

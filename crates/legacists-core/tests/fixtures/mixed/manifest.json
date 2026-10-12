@@ -1,0 +1,26 @@
+{
+  "id": "mixed-v1",
+  "tests": ["T-02", "T-08", "T-09", "T-21"],
+  "requirements": ["R-02", "R-03", "R-05", "R-07", "N-06"],
+  "encoding": "UTF-8",
+  "options": {"webRoot":"web"},
+  "confirmed": [
+    ["src/demo/web/Entry.java", "import", "src/demo/lib/Service.java"],
+    ["src/demo/web/Entry.java", "extends", "src/demo/lib/Service.java"],
+    ["web/index.jsp", "include", "web/parts/header.jspf"],
+    ["web/index.jsp", "script", "web/js/main.js"],
+    ["web/index.jsp", "navigation", "src/demo/web/Entry.java"],
+    ["web/js/main.js", "module", "web/js/helper.js"],
+    ["web/WEB-INF/web.xml", "configuration", "src/demo/web/Entry.java"],
+    ["config/app.properties", "configuration", "src/demo/web/Entry.java"]
+  ],
+  "evidence": [
+    ["src/demo/web/Entry.java", "JAVA-IMPORT", "import demo.lib.Service;"],
+    ["src/demo/web/Entry.java", "JAVA-TYPE", "Service"],
+    ["web/index.jsp", "JSP-INCLUDE", "parts/header.jspf"],
+    ["web/index.jsp", "MARKUP-REF", "/entry"]
+  ],
+  "selection": ["web/index.jsp"],
+  "maxBytes": 800000,
+  "diagnostics": []
+}

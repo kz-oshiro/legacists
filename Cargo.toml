@@ -1,0 +1,9 @@
+[workspace]
+members = ["crates/legacists-core", "apps/desktop/src-tauri", "xtask"]
+default-members = ["crates/legacists-core", "xtask"]
+resolver = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

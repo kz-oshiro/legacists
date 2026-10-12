@@ -1,0 +1,4 @@
+/outputs/
+/target/
+**/node_modules/
+**/dist/

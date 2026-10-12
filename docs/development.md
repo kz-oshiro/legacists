@@ -51,15 +51,35 @@
 
 ## 環境と実行入口
 
-現時点ではCargo workspace、フロントエンド設定、依存lockfile、`xtask`、CI、アプリは未作成。実行可能なセットアップ・テスト・ビルドのコマンドはまだない。
+Cargo workspaceは独立Core（`crates/legacists-core`）、Tauriアプリ（`apps/desktop/src-tauri`）、`xtask`で構成する。画面は`apps/desktop`。toolchainは`rust-toolchain.toml`、依存は`Cargo.lock`と`apps/desktop/package-lock.json`で固定する。製品版はアプリの`Cargo.toml`を正本とする。
 
-採用toolchain・依存版とビルド条件は[設計書](design.md#技術の採用状況)を初期入力に、Rust/MSVC、Windows C++ Build Tools、Node.js・パッケージマネージャ、WebView2などの実際の導入方法を#3の最初の構築時にここへ記載する。利用者に必要な環境はREADMEへ記載し、開発環境と区別する。
+開発端末にはWindows 11 x64、PowerShell 7、rustup、Visual Studio 2022 Build Toolsの「C++によるデスクトップ開発」（MSVC x64とWindows SDK）、既存WebView2が必要。利用者向けの追加資材と開発用のNode・Playwrightを混同しない。
 
-共通入口を`cargo xtask`に集約する[責務の設計](design.md#試験ビルド入口の設計)を引き継ぐ。実装した入口だけを利用手順として掲載する。採用したVueのフロントエンドビルド・worker同梱も含め、docs-searchのビルド方式をそのまま使えるとはみなさない。
+最初の依存導入はリポジトリのルートで明示的に実行する。セットアップはネットワークを使う。Nodeの固定ZIPをSHA256照合して`outputs/tools`へ展開し、固定Rust toolchainとnpm/Cargo/Playwrightの依存を導入する。
 
-Core単独のビルド・試験はアプリ全体の入口から独立させ、フロントエンドの依存導入・ビルドを必要としない入口を#3で用意する。境界と確認方法の正本は[Coreの構成](design.md#coreを将来分離するための境界)と[分離確認](design.md#coreの分離確認)を参照する。現在は実行可能なCoreクレートも未作成。
+```powershell
+pwsh -NoProfile -File test-support/setup.ps1
+```
 
-依存導入はセットアップに分け、通常の試験で依存を黙って追加しない。lockfile・toolchain・実行コマンドをコードと一緒に管理し、製品版を複数の文書で手動管理しない。
+以後は同じルートから次の入口を使う。試験は依存導入を行わず、導入不足は失敗にする。
+
+| 入口 | 現在の実装範囲 |
+| --- | --- |
+| `cargo xtask setup` | 導入済み固定Nodeの確認、npm ci、Cargo fetch、試験ブラウザー導入、ライセンス収集、依存アドバイザリー検査 |
+| `cargo xtask check` | rustfmtの読み取り専用確認、Clippy、Vue/TypeScript、文書リンクと分離・配布契約の静的確認 |
+| `cargo xtask test` | Core契約試験、設定・出力障害試験、Coreだけをコピーした外部Rust利用プログラムの実行 |
+| `cargo xtask ui` | 実画面資材とIPC契約モックのheadless Playwright試験 |
+| `cargo xtask build` | ライセンス・workerを含む画面ビルド、Release EXE、PE依存検査、EXE一つのZIP |
+| `cargo xtask exe <EXE絶対パス>` | 指定EXEのCDP結合試験。OSダイアログには操作可能なWindowsデスクトップが必要 |
+| `cargo xtask dev` | #3のcheck・test・ui・build・最小実EXE経路。失敗した工程より後は未実行として記録 |
+| `cargo xtask perf` | #6未確定を理由付き未実行として記録し失敗終了するゲート。生成器と測定器は未実装 |
+| `cargo xtask ci` | check・test・ui・build・exe・perfを必須工程として統合。現在は全体成功を判定できない |
+
+Coreだけなら`cargo test --locked --offline -p legacists-core`を使用でき、Node・Tauri・画面ビルドは不要。外部利用の独立確認は`test-support/core-isolation.ps1`。試験定義は`crates/legacists-core/tests`と`test-support`を参照する。通常試験はスクリーンショット・動画・traceを保存しない。
+
+ビルドしたEXE／ZIPは実行原本の`artifacts`に保存し、実EXE試験へ同じEXEを渡す。`cargo xtask build`単独の実行は実EXE試験の成功を意味しない。生成ライセンスはEXEに内包し、生成元の補完資料は`test-support/licenses`で管理する。
+
+#6の条件、#10の残る運用方針は未確定。性能生成器・測定器、全実EXEケース、GitHub Actionsでの共通運用は未完了として#3で管理する。実装中の入口を全受入条件の確認済みと読み替えない。
 
 ## 検証の方針
 
@@ -86,7 +106,7 @@ WebView2への接続は[Playwright公式手順](https://playwright.dev/docs/webv
 
 PlaywrightのDOM操作でOS標準のフォルダ／保存ダイアログを確認済みとはしない。#2で[実EXEとネイティブ操作の境界](design.md#実exeとネイティブ操作の境界)を確定した。Playwrightから実ダイアログを開き、Windows UI Automationの開発用ヘルパーで選択・キャンセル・保存を操作し、アプリの状態と保存結果を照合する。実ダイアログの必須確認を代替IPCや画面モックの成功で補わない。DPI・外観は確認した条件だけを報告する。スクリーンショット・動画・traceは通常試験で一律保存せず、DOM・状態・IPC・テキスト・保存ファイルで判定する。
 
-Playwright・試験用ブラウザーの導入は開発時セットアップへ分け、版と依存を#3で固定する。利用者向けEXE／ZIPへPlaywrightや試験用ブラウザーを同梱しない。現時点では採用方針の反映のみで、導入・試験基盤の実装・E2E実行は未実施。
+Playwright・試験用ブラウザーの導入は開発時セットアップへ分け、版と依存を#3で固定する。利用者向けEXE／ZIPへPlaywrightや試験用ブラウザーを同梱しない。依存導入、画面フローと実EXE CDP接続の入口を実装した。画面モックの成功と、OSダイアログを含む実EXE経路の結果は別工程の生成記録で確認する。
 
 実行原本はGit管理外の`outputs/runs/<実行ID>/`に置く。記録生成を実装する際は、対象コミットとdirty状態、開始・終了、実行コマンド、実測環境、工程の結果・時間・理由、ログ参照、試験結果、成果物の版・サイズ・ハッシュを`report.json`と`report.md`へまとめる。異なる実行の成功を混ぜない。
 

@@ -1,0 +1,32 @@
+{
+  "name": "legacists-desktop",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.21.0",
+    "npm": "11.19.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check": "vue-tsc --noEmit",
+    "build": "vue-tsc --noEmit && vite build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.3",
+    "cytoscape": "3.34.3",
+    "dockview-vue": "8.5.1",
+    "monaco-editor": "0.57.0",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@tauri-apps/cli": "2.12.2",
+    "@types/node": "24.19.2",
+    "@vitejs/plugin-vue": "6.0.10",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vue-tsc": "3.3.13"
+  },
+  "overrides": { "dompurify": "3.4.16" }
+}
