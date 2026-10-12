@@ -254,7 +254,12 @@ impl Run {
                 let artifacts = self.directory.join("artifacts");
                 fs::create_dir_all(&artifacts).unwrap();
                 let exe = artifacts.join("legacists-desktop.exe");
-                fs::copy(self.root.join("target/release/legacists-desktop.exe"), &exe).unwrap();
+                let target_directory = env::var_os("CARGO_TARGET_DIR")
+                    .map(PathBuf::from)
+                    .map(|path| self.root.join(path))
+                    .unwrap_or_else(|| self.root.join("target"));
+                self.report["environment"]["cargoTargetDir"] = json!(target_directory);
+                fs::copy(target_directory.join("release/legacists-desktop.exe"), &exe).unwrap();
                 if !self.powershell("package", "test-support/package.ps1") {
                     return false;
                 }
