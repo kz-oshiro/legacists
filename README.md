@@ -41,4 +41,4 @@ AIへ渡す調査TXTには、利用者が選んだソースをそのまま含め
 
 アプリとRust解析Coreは、このリポジトリで一緒に管理します。Coreの独立性はRustクレートと依存方向で確保します。
 
-ライセンスは未決定です。
+ライセンス・署名・更新方針は[公開方針Issue #8](https://github.com/kz-oshiro/legacists/issues/8)で公開前に確定します。
