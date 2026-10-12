@@ -7,7 +7,7 @@ import Graph from './Graph.vue';
 import Source from './Source.vue';
 import Settings from './Settings.vue';
 import Explorer from './Explorer.vue';
-import {panelDefinitions,showPanel,type PanelId} from './panels';
+import {panelDefinitions,showPanel,showAllPanels as restorePanels,type PanelId} from './panels';
 import './style.css';
 const s=createState();const {projectId,snapshotId,stage,running,stale,error,version,ready,resources,resourceTotal,resourceCursor,search,selected,skipped,root,graphResources,relations,relationTotal,graphCursor,direction,kind,resolution,depth,overview,overviewCursor,grouping,details,source,sourcePosition,editorPosition,diagnostics,diagnosticTotal,diagnosticCursor,report,settings,plan,part,preview,previewOffset,success,canExport}=s;
 let docking:DockviewApi|undefined;const modal=ref<'settings'|'help'|null>(null);const licenses=ref(''),explorerReveal=ref(0);
@@ -19,17 +19,14 @@ const relationTitle=(r:typeof relations.value[number])=>`${pathFor(r.from)} → 
 function panel(name:PanelId){if(docking)showPanel(docking,name);}
 function closeViewMenu(focus=false){if(viewMenu.value){viewMenu.value.open=false;if(focus)viewMenu.value.querySelector('summary')?.focus();}}
 function dismissViewMenu(event:MouseEvent){if(event.target instanceof Node&&!viewMenu.value?.contains(event.target))closeViewMenu();}
-function showAllPanels(){for(const definition of panelDefinitions)if(!docking?.getPanel(definition.id))panel(definition.id);closeViewMenu(true);}
+function showAllPanels(){if(docking)restorePanels(docking);closeViewMenu(true);}
 function onReady(event:DockviewReadyEvent){
   docking=event.api;
   panelListeners.push(
     docking.onDidAddPanel(added=>{openPanels.value=[...new Set([...openPanels.value,added.id])];}),
     docking.onDidRemovePanel(removed=>{openPanels.value=openPanels.value.filter(id=>id!==removed.id);}),
   );
-  for(const definition of panelDefinitions)panel(definition.id);
-  docking.getPanel('explorer')?.api.setSize({width:280});
-  docking.getPanel('source')?.api.setSize({width:Math.min(400,docking.width*.28)});
-  panel('graph');panel('export');
+  restorePanels(docking);
 }
 async function resource(id:string){await s.focusId(id);panel('source');}
 async function showGroup(name:string){await s.group(name);explorerReveal.value++;panel('explorer');}

@@ -27,3 +27,17 @@ export function showPanel(api: DockviewApi, id: PanelId) {
   }
   panel.api.setActive();
 }
+
+export function showAllPanels(api: DockviewApi) {
+  const empty = api.totalPanels === 0;
+  for (const definition of panelDefinitions) {
+    if (!api.getPanel(definition.id)) showPanel(api, definition.id);
+  }
+  // Only an empty workspace needs initial sizing; preserve any existing layout.
+  if (empty) {
+    api.getPanel('explorer')?.api.setSize({ width: 280 });
+    api.getPanel('source')?.api.setSize({ width: Math.min(400, api.width * .28) });
+    showPanel(api, 'graph');
+    showPanel(api, 'export');
+  }
+}

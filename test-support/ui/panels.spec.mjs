@@ -52,6 +52,7 @@ test('T-26 all closed, missing reference, moved layout and existing panels stay 
   // Each component can be the sole panel, with no placement reference available.
   for(const title of titles){await show(page,title);await expect(page.getByRole('tab')).toHaveCount(1);await close(page,title);}
   await showAll(page);await checkIds(page);
+  await expect.poll(()=>page.getByRole('region',{name:'ファイル一覧',exact:true}).evaluate(element=>element.clientWidth)).toBe(280);
   // With graph absent, Source falls back into the active Explorer group.
   await close(page,'Source / 根拠');await close(page,'関連グラフ');await show(page,'Explorer');await show(page,'Source / 根拠');
   expect(await tab(page,'Source / 根拠').getAttribute('aria-controls')).toBe(await tab(page,'Explorer').getAttribute('aria-controls'));
