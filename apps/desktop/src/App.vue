@@ -7,35 +7,46 @@ import Graph from './Graph.vue';
 import Source from './Source.vue';
 import Settings from './Settings.vue';
 import Explorer from './Explorer.vue';
+import {panelDefinitions,showPanel,type PanelId} from './panels';
 import './style.css';
 const s=createState();const {projectId,snapshotId,stage,running,stale,error,version,ready,resources,resourceTotal,resourceCursor,search,selected,skipped,root,graphResources,relations,relationTotal,graphCursor,direction,kind,resolution,depth,overview,overviewCursor,grouping,details,source,sourcePosition,editorPosition,diagnostics,diagnosticTotal,diagnosticCursor,report,settings,plan,part,preview,previewOffset,success,canExport}=s;
 let docking:DockviewApi|undefined;const modal=ref<'settings'|'help'|null>(null);const licenses=ref(''),explorerReveal=ref(0);
+const viewMenu=ref<HTMLDetailsElement>(),openPanels=ref<string[]>([]);
+const panelListeners:{dispose:()=>void}[]=[];
 const rootName=computed(()=>settings.value?.settings.project?.split(/[\\/]/).filter(Boolean).slice(-1)[0]??'プロジェクト');
 const pathFor=(id:string)=>graphResources.value.find(r=>r.id===id)?.path??id;
 const relationTitle=(r:typeof relations.value[number])=>`${pathFor(r.from)} → ${r.targets.length?r.targets.map(pathFor).join('、'):r.reference} · ${r.kind} · ${r.status}`;
-function panel(name:string){docking?.getPanel(name)?.api.setActive();}
-function onReady(event:DockviewReadyEvent){docking=event.api;
-  event.api.addPanel({id:'explorer',component:'explorer',title:'Explorer',initialWidth:280});
-  event.api.addPanel({id:'graph',component:'graph',title:'関連グラフ',position:{referencePanel:'explorer',direction:'right'}});
-  event.api.addPanel({id:'overview',component:'overview',title:'概要グラフ',position:{referencePanel:'graph',direction:'within'}});
-  event.api.addPanel({id:'source',component:'source',title:'Source / 根拠',position:{referencePanel:'graph',direction:'right'},initialWidth:450});
-  event.api.addPanel({id:'export',component:'export',title:'AI Export',position:{referencePanel:'graph',direction:'below'},initialHeight:250});
-  event.api.addPanel({id:'diagnostics',component:'diagnostics',title:'Diagnostics',position:{referencePanel:'export',direction:'within'}});
-  event.api.getPanel('explorer')?.api.setSize({width:280});
-  event.api.getPanel('source')?.api.setSize({width:Math.min(400,event.api.width*.28)});
-  panel('graph');panel('export');}
-async function resource(id:string){await s.focusId(id);}
+function panel(name:PanelId){if(docking)showPanel(docking,name);}
+function closeViewMenu(focus=false){if(viewMenu.value){viewMenu.value.open=false;if(focus)viewMenu.value.querySelector('summary')?.focus();}}
+function dismissViewMenu(event:MouseEvent){if(event.target instanceof Node&&!viewMenu.value?.contains(event.target))closeViewMenu();}
+function showAllPanels(){for(const definition of panelDefinitions)if(!docking?.getPanel(definition.id))panel(definition.id);closeViewMenu(true);}
+function onReady(event:DockviewReadyEvent){
+  docking=event.api;
+  panelListeners.push(
+    docking.onDidAddPanel(added=>{openPanels.value=[...new Set([...openPanels.value,added.id])];}),
+    docking.onDidRemovePanel(removed=>{openPanels.value=openPanels.value.filter(id=>id!==removed.id);}),
+  );
+  for(const definition of panelDefinitions)panel(definition.id);
+  docking.getPanel('explorer')?.api.setSize({width:280});
+  docking.getPanel('source')?.api.setSize({width:Math.min(400,docking.width*.28)});
+  panel('graph');panel('export');
+}
+async function resource(id:string){await s.focusId(id);panel('source');}
 async function showGroup(name:string){await s.group(name);explorerReveal.value++;panel('explorer');}
 async function showRelation(id:string){await s.relation(id);panel('source');}
 async function help(){modal.value='help';licenses.value=await (await fetch('/licenses.txt')).text();}
 async function saveReport(){const result=await s.request<{cancelled?:boolean;code?:string}>('diagnostic_report_save',{},s.context());if(result.code)throw Error(result.code);if(!result.cancelled)success.value='エラーレポートを保存しました';}
-onMounted(()=>void s.guard(async()=>{if(!globalThis.Proxy||!globalThis.Promise||!globalThis.ResizeObserver||!globalThis.Worker||!globalThis.Blob||!document.createElement('canvas').getContext('2d'))throw Error('既存WebView2に必要な機能がありません');await s.init();}));
-onBeforeUnmount(()=>s.dispose());
+onMounted(()=>{document.addEventListener('click',dismissViewMenu);void s.guard(async()=>{if(!globalThis.Proxy||!globalThis.Promise||!globalThis.ResizeObserver||!globalThis.Worker||!globalThis.Blob||!document.createElement('canvas').getContext('2d'))throw Error('既存WebView2に必要な機能がありません');await s.init();});});
+onBeforeUnmount(()=>{document.removeEventListener('click',dismissViewMenu);for(const listener of panelListeners)listener.dispose();s.dispose();});
 </script>
 
 <template>
   <div class="application">
     <header class="toolbar"><div class="brand"><span class="brand-mark">L</span><strong>legacists</strong><span class="version">v{{version}}</span></div><div class="toolbar-actions">
+      <details ref="viewMenu" class="view-menu" @keydown.esc.stop.prevent="closeViewMenu(true)"><summary>表示</summary><div class="view-menu-items" role="group" aria-label="パネルの表示">
+        <button v-for="definition in panelDefinitions" :key="definition.id" :aria-label="definition.title" :aria-describedby="`panel-status-${definition.id}`" @click="panel(definition.id);closeViewMenu(true)"><span>{{definition.title}}</span><span :id="`panel-status-${definition.id}`" class="muted">{{openPanels.includes(definition.id)?'表示中':'閉じています'}}</span></button>
+        <button class="show-all-panels" @click="showAllPanels">すべてのパネルを表示</button>
+      </div></details>
       <button class="primary" :disabled="!ready||running||settings?.pending" @click="s.guard(s.open)">フォルダを開く</button>
       <button :disabled="!projectId||running||settings?.pending" @click="s.guard(s.start)">再解析</button><button v-if="running" @click="s.guard(s.cancel)">キャンセル</button>
       <button :disabled="!projectId||running" @click="s.guard(s.close)">閉じる</button><button :disabled="!settings" @click="modal='settings'">設定</button><button @click="s.guard(help)">使い方・ライセンス</button>
@@ -49,7 +60,7 @@ onBeforeUnmount(()=>s.dispose());
       <template #panel-explorer><section class="pane explorer" aria-label="ファイル一覧">
         <label class="search-field"><span>検索</span><input v-model="search" placeholder="名前・相対パス" @input="s.guard(()=>s.loadResources())"></label>
         <div class="muted counts">{{resources.length}} / {{resourceTotal}} ファイル · 出力対象 {{selected.length}}</div>
-        <Explorer :resources="resources" :selected="selected" :active="root?.id" :running="running" :search="search" :project-id="projectId" :root-name="rootName" :reveal="explorerReveal" @focus="r=>s.guard(()=>s.focus(r))" @select="(r,checked)=>s.guard(()=>s.select(r,checked))"/>
+        <Explorer :resources="resources" :selected="selected" :active="root?.id" :running="running" :search="search" :project-id="projectId" :root-name="rootName" :reveal="explorerReveal" @focus="r=>s.guard(()=>resource(r.id))" @select="(r,checked)=>s.guard(()=>s.select(r,checked))"/>
         <button v-if="resourceCursor" class="load-more" :disabled="s.resourceLoading.value" @click="s.guard(()=>s.loadResources(true))">さらに表示</button>
         <p v-if="resourceCursor" class="muted counts">未取得のファイルがあります。続きを取得して確認できます。</p>
         <details class="exclusions"><summary>適用中の除外・読めない資源</summary><div class="exclusion-content"><p>{{settings?.settings.analysis.exclusions.join('、')}}</p><ul><li v-for="(skip,index) in skipped" :key="index">{{skip.path}} · {{skip.reason}}</li></ul></div></details>
@@ -79,7 +90,7 @@ onBeforeUnmount(()=>s.dispose());
     <footer class="statusbar"><span role="status" data-testid="analysis-status">{{ready?stage:'起動しています'}}</span><span>{{snapshotId?'解析結果あり':'解析結果なし'}} · オフライン静的解析 · ソースは読み取り専用</span></footer>
     <div v-if="modal" class="modal-backdrop" @click.self="modal=null"><section class="modal" role="dialog" :aria-label="modal==='settings'?'設定':'使い方・ライセンス'"><header><h2>{{modal==='settings'?'設定':'使い方・ライセンス'}}</h2><button @click="modal=null">閉じる</button></header>
       <Settings v-if="modal==='settings'" :state="s" @close="modal=null"/>
-      <template v-else><p>1. フォルダを開く → 2. ファイル・グラフから根拠を確認 → 3. 必要なファイルを一件ずつ手動選択 → 4. プレビューを確認してTXTを保存。</p><p>ソース変更後は手動で再解析してください。TXTはUTF-8で、既定800,000バイトを超えると連番に分かれます。復号できないファイルは出力できません。未解析でも復号済みの本文は出力できます。</p><p>確定・候補・未解決を区別します。静的に明示された参照を扱い、動的処理や外部依存を完全に再現するものではありません。コードの実行・編集、外部AIへの自動送信は行いません。</p><p>エラーレポートに本文・抜粋・設定値は添付しません。実ソースを提出せず、番号・確認結果・公開可能な合成例を改修担当へ伝えてください。公開前に相対パス等を確認してください。</p><h3>依存ライセンス・NOTICE</h3><pre class="licenses">{{licenses}}</pre></template>
+      <template v-else><p>1. フォルダを開く → 2. ファイル・グラフから根拠を確認 → 3. 必要なファイルを一件ずつ手動選択 → 4. プレビューを確認してTXTを保存。</p><p>×で閉じたパネルは上部の「表示」で選んで戻せます。「すべてのパネルを表示」でまとめて戻せます。解析結果・検索条件・出力対象・プレビューは保持され、再起動や再解析は不要です。</p><p>ソース変更後は手動で再解析してください。TXTはUTF-8で、既定800,000バイトを超えると連番に分かれます。復号できないファイルは出力できません。未解析でも復号済みの本文は出力できます。</p><p>確定・候補・未解決を区別します。静的に明示された参照を扱い、動的処理や外部依存を完全に再現するものではありません。コードの実行・編集、外部AIへの自動送信は行いません。</p><p>エラーレポートに本文・抜粋・設定値は添付しません。実ソースを提出せず、番号・確認結果・公開可能な合成例を改修担当へ伝えてください。公開前に相対パス等を確認してください。</p><h3>依存ライセンス・NOTICE</h3><pre class="licenses">{{licenses}}</pre></template>
     </section></div>
   </div>
 </template>

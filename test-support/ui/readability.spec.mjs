@@ -96,7 +96,7 @@ test('T-24 graph evidence, focus, manual export and overview survive resize and 
   await page.setViewportSize({width:1100,height:760});await pane.getByRole('button',{name:'全体表示',exact:true}).click();
   await pane.getByLabel('解決',{exact:true}).selectOption('');await pane.locator('.canvas').evaluate(element=>element._cyreg.cy.getElementById('file-2').emit('tap'));
   await expect(page.locator('.source-info')).toContainText(duplicatePaths[0]);await expect(row(page,duplicatePaths[0]).getByRole('checkbox')).not.toBeChecked();
-  await page.getByText('概要グラフ',{exact:true}).click();const overview=page.getByRole('region',{name:'概要グラフ',exact:true});await overview.getByRole('button',{name:'全体表示',exact:true}).click();
+  await page.getByRole('tab',{name:'概要グラフ',exact:true}).click();const overview=page.getByRole('region',{name:'概要グラフ',exact:true});await overview.getByRole('button',{name:'全体表示',exact:true}).click();
   await overview.locator('.canvas').evaluate(element=>element._cyreg.cy.nodes().first().emit('tap'));await expect(page.locator('.file-row')).toHaveCount(4);
 });
 

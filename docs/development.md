@@ -83,6 +83,8 @@ Coreだけなら`cargo test --locked --offline -p legacists-core`を使用でき
 
 Explorer・グラフの可読性改善（#12・#11）は[設計書のT-23〜T-25](design.md#確認項目手順期待結果)で確認する。T-23・T-24の操作・幾何・状態の自動判定と、T-25で対象パネルだけ保存する画像の外観確認を区別する。T-25の画像・viewport・DPRは同じ実行の`ui-results.json`から参照し、画像確認の判断は実行原本へ別途残す。
 
+パネル再表示（#13）は同じ設計書のT-26〜T-28に従う。T-26・T-27の操作・状態保持・サイズ追従の自動判定と、T-28で復元後のメニュー・ワークスペース・診断だけを保存する画像確認を区別し、確認判断は同じ実行原本へ残す。
+
 ビルドしたEXE／ZIPは実行原本の`artifacts`に保存し、実EXE試験へ同じEXEを渡す。名前は`legacists-desktop-v<version>.exe`と`legacists-v<version>-windows-x64.zip`で、版はアプリの`Cargo.toml`から取得する。ZIP内は同じ版付きEXE一つ。`cargo xtask build`単独の実行は実EXE試験の成功を意味しない。生成ライセンスはEXEに内包し、生成元の補完資料は`test-support/licenses`で管理する。
 
 ローカル起動には、ビルド終了出力の`Local EXE`に表示する版付きEXEを使う。標準では`target/release`、`CARGO_TARGET_DIR`やCargo設定を変更した場合はそのビルド先の`release`に保存する。実際のビルド先・ローカルEXE・保存したEXE／ZIPへの参照は同じ実行の`report.md`と`report.json`にも出す。標準フォルダだけを見て最新と判断せず、終了出力か生成記録の保存先を確認する。

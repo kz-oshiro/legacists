@@ -10,9 +10,11 @@ relations.push({id:'unresolved',from:'file-1',kind:'module',status:'unresolved',
 function bootstrap(fixture){
   const {resources,relations}=fixture;
   const settings={schemaVersion:1,revision:0,project:'C:\\Synthetic\\ReadableProject',selected:[],analysis:{exclusions:['.git','target'],webRoot:'web',encodings:{}},maxBytes:800000};
-  const summary=()=>({projectId:'project',snapshotId:'snapshot',selection:[...settings.selected],selectionRevision:settings.revision,stale:false,resources:resources.length,diagnostics:0,skipped:Array.from({length:50},(_,i)=>({path:`target/excluded-${i}`,reason:'excluded'})),webRoots:['web']});
+  const summary=()=>({projectId:'project',snapshotId:'snapshot',selection:[...settings.selected],selectionRevision:settings.revision,stale:false,resources:resources.length,diagnostics:1,skipped:Array.from({length:50},(_,i)=>({path:`target/excluded-${i}`,reason:'excluded'})),webRoots:['web']});
   const info=()=>({settings:structuredClone(settings),defaultRoot:'C:\\Synthetic\\data',currentRoot:'C:\\Synthetic\\data',bootstrap:'C:\\Synthetic\\bootstrap.json',notice:null,pending:false});
-  window.__readability={requests:[],holdPage:false};
+  const preview=`LEGACISTS-TXT/1\nSOURCE path="${resources[1].path}"\n// synthetic source`;
+  const previewBytes=new TextEncoder().encode(preview).length;
+  window.__readability={requests:[],holdPage:false,holdAnalysis:false};
   mockIPC((command,payload)=>{
     const request=structuredClone(payload.request);window.__readability.requests.push(request);
     let data;
@@ -22,9 +24,13 @@ function bootstrap(fixture){
       case 'settings_read':data=info();break;
       case 'project_open':case 'project_status':data=summary();break;
       case 'analysis_start':data={jobId:'job'};break;
-      case 'analysis_status':data={projectId:'project',jobId:'job',sequence:1,stage:'ready',terminal:true,snapshotId:'snapshot'};break;
+      case 'analysis_status':data={projectId:'project',jobId:'job',sequence:window.__readability.holdAnalysis?1:2,stage:window.__readability.holdAnalysis?'extract':'ready',terminal:!window.__readability.holdAnalysis,snapshotId:'snapshot'};break;
       case 'project_close':data={closed:true};break;
       case 'diagnostics_report':data={text:'合成診断'};break;
+      case 'diagnostic_report_save':data={saved:1};break;
+      case 'export_prepare':data={planId:'plan',parts:[{index:0,bytes:previewBytes}]};break;
+      case 'export_read':data={text:preview,end:previewBytes,totalBytes:previewBytes};break;
+      case 'export_save':data={saved:1};break;
       case 'selection_update':{
         const path=resources.find(resource=>resource.id===request.args.resourceId).path;
         settings.selected=settings.selected.filter(value=>value!==path);
@@ -47,7 +53,7 @@ function bootstrap(fixture){
           }
           case 'overview':data=query.group?page(resources.slice(0,4)):page([{id:'modules/長い共通フォルダ',members:resources.slice(0,4).map(resource=>resource.id),internal:[],outgoing:{config:['group-relation']}},{id:'config',members:['file-7','file-8'],internal:[],outgoing:{}}]);break;
           case 'relation':{const relation=relations.find(relation=>relation.id===query.id);data=page([{relation,evidence:[1,2].map(n=>({path:resources[1].path,evidence:{id:`evidence-${n}`,resourceId:'file-1',rule:`SYNTHETIC-${n}`,start:{byte:0,line:1,column:1},end:{byte:5,line:1,column:6}},excerpt:'synthetic'}))}]);break;}
-          case 'diagnostics':data=page([]);break;
+          case 'diagnostics':data=page([{id:'diagnostic',resourceId:'file-1',code:'LEG-3001',path:resources[1].path,stage:'extract',reason:'synthetic'}]);break;
           default:throw Error(query.type);
         }break;
       }
